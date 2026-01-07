@@ -8,7 +8,7 @@ import os
 import math
 import time
 
-TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
+TOKEN = os.environ.get("TOKEN")
 
 MAX_MESSAGE_LENGTH = 3500
 CHUNK_LENGTH_MS = 60_000
