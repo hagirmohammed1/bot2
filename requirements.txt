@@ -4,12 +4,11 @@ pydub==0.25.1
 # Whisper (اختياري إذا متوفر)
 git+https://github.com/openai/whisper.git
 
-# Vosk (اختياري إذا متوفر)
-vosk==0.3.68
+# Vosk (استخدم أحدث نسخة متاحة)
+vosk>=0.3.45
 
 # SpeechRecognition (احتياطي إذا لا يوجد Whisper أو Vosk)
 SpeechRecognition==3.9.0
 
 # PyTorch (مطلوب للـ Whisper)
 torch==2.2.0 --extra-index-url https://download.pytorch.org/whl/cpu
-
