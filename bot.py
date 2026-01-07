@@ -1,15 +1,14 @@
-# بوت تحويل الصوت إلى نص بدون ffmpeg، يعتمد على Vosk أو SpeechRecognition
-# يدعم التسجيلات الطويلة، العربية والإنجليزية، وعرض التقدم والوقت المتبقي
+# بوت خفيف لا يحتاج ffmpeg أو pydub
+# يعتمد فقط على Vosk أو SpeechRecognition
+# يدعم التسجيلات الطويلة، العربية والإنجليزية، ويقسم النص على عدة رسائل
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-from pydub import AudioSegment
 import os
 import math
 import time
 
-TOKEN = os.environ.get("TOKEN")
-
+TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
 MAX_MESSAGE_LENGTH = 3500
 CHUNK_LENGTH_MS = 60_000
 
@@ -23,7 +22,7 @@ except:
     import speech_recognition as sr
     USE_SPEECHREC = True
 
-# تحميل نموذج Vosk إذا كان موجودًا
+# تحميل نموذج Vosk إذا متوفر
 if USE_VOSK:
     if not os.path.exists("vosk-model"):
         print("⚠️ لا يوجد نموذج Vosk، يجب تحميله يدويًا")
@@ -39,7 +38,6 @@ async def send_long_text(message, text):
 
 async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-
     if not (message.voice or message.audio):
         await message.reply_text("⚠️ أرسل رسالة صوتية أو ملف صوتي فقط")
         return
@@ -49,71 +47,67 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wav_path = "full_audio.wav"
     await file.download_to_drive(input_path)
 
-    # تحويل الصوت إلى WAV بدون ffmpeg
-    sound = AudioSegment.from_file(input_path)
-    sound = sound.set_channels(1).set_frame_rate(16000)
-    sound.export(wav_path, format="wav")
-
     full_text = ""
-    chunks = math.ceil(len(sound) / CHUNK_LENGTH_MS)
-    start_time = time.time()
 
-    progress_message = await message.reply_text(
-        f"⏳ بدء المعالجة...\n🔄 التقدم: 0% (0 / {chunks})\n⏱️ الوقت المتبقي: --"
-    )
+    # تقسيم الصوت باستخدام Wave (بدون pydub)
+    import wave
+    with wave.open(input_path, 'rb') as wf:
+        frames = wf.getnframes()
+        rate = wf.getframerate()
+        duration_ms = (frames / rate) * 1000
+        chunks = math.ceil(duration_ms / CHUNK_LENGTH_MS)
 
-    for i in range(chunks):
-        start_ms = i * CHUNK_LENGTH_MS
-        end_ms = min((i + 1) * CHUNK_LENGTH_MS, len(sound))
-        chunk = sound[start_ms:end_ms]
-
-        chunk_path = f"chunk_{i}.wav"
-        chunk.export(chunk_path, format="wav")
-
-        text = ""
-        if USE_VOSK:
-            import wave, json
-            wf = wave.open(chunk_path, "rb")
-            rec = KaldiRecognizer(vosk_model, wf.getframerate())
-            data = wf.readframes(wf.getnframes())
-            if rec.AcceptWaveform(data):
-                res = json.loads(rec.Result())
-                text = res.get('text','')
-            wf.close()
-        elif USE_SPEECHREC:
-            r = sr.Recognizer()
-            with sr.AudioFile(chunk_path) as source:
-                audio_data = r.record(source)
-                try:
-                    text = r.recognize_google(audio_data, language="ar-AR")
-                except:
-                    try:
-                        text = r.recognize_google(audio_data, language="en-US")
-                    except:
-                        text = ""
-
-        if text:
-            full_text += text + "\n"
-
-        os.remove(chunk_path)
-
-        elapsed = time.time() - start_time
-        completed = i + 1
-        avg_time_per_chunk = elapsed / completed
-        remaining_chunks = chunks - completed
-        remaining_seconds = int(avg_time_per_chunk * remaining_chunks)
-        minutes = remaining_seconds // 60
-        seconds = remaining_seconds % 60
-        percent = int((completed / chunks) * 100)
-
-        await progress_message.edit_text(
-            f"⏳ جارٍ معالجة الصوت...\n"
-            f"🔄 التقدم: {percent}% ({completed} / {chunks})\n"
-            f"⏱️ الوقت المتبقي: {minutes} دقيقة {seconds} ثانية"
+        progress_message = await message.reply_text(
+            f"⏳ بدء المعالجة...\n🔄 التقدم: 0% (0 / {chunks})\n⏱️ الوقت المتبقي: --"
         )
 
+        for i in range(chunks):
+            start_frame = int(i * CHUNK_LENGTH_MS * rate / 1000)
+            end_frame = int(min((i + 1) * CHUNK_LENGTH_MS * rate / 1000, frames))
+            wf.setpos(start_frame)
+            data = wf.readframes(end_frame - start_frame)
+
+            text = ""
+            if USE_VOSK:
+                import json
+                rec = KaldiRecognizer(vosk_model, rate)
+                if rec.AcceptWaveform(data):
+                    res = json.loads(rec.Result())
+                    text = res.get('text','')
+            elif USE_SPEECHREC:
+                r = sr.Recognizer()
+                from io import BytesIO
+                audio_file = sr.AudioFile(BytesIO(data))
+                with audio_file as source:
+                    audio_data = r.record(source)
+                    try:
+                        text = r.recognize_google(audio_data, language="ar-AR")
+                    except:
+                        try:
+                            text = r.recognize_google(audio_data, language="en-US")
+                        except:
+                            text = ""
+
+            if text:
+                full_text += text + "\n"
+
+            # تحديث نسبة التقدم
+            elapsed = time.time() - update.message.date.timestamp()
+            completed = i + 1
+            avg_time_per_chunk = elapsed / completed if completed else 0
+            remaining_chunks = chunks - completed
+            remaining_seconds = int(avg_time_per_chunk * remaining_chunks)
+            minutes = remaining_seconds // 60
+            seconds = remaining_seconds % 60
+            percent = int((completed / chunks) * 100)
+
+            await progress_message.edit_text(
+                f"⏳ جارٍ معالجة الصوت...\n"
+                f"🔄 التقدم: {percent}% ({completed} / {chunks})\n"
+                f"⏱️ الوقت المتبقي: {minutes} دقيقة {seconds} ثانية"
+            )
+
     if os.path.exists(input_path): os.remove(input_path)
-    if os.path.exists(wav_path): os.remove(wav_path)
 
     if not full_text.strip():
         await progress_message.edit_text("⚠️ لم أتمكن من استخراج نص واضح من الصوت")
