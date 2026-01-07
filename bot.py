@@ -1,5 +1,6 @@
-# بوت Whisper صوت إلى نص مع تحميل ffmpeg تلقائيًا على Railway
+# بوت تحويل الصوت إلى نص يعتمد على أفضل مكتبة متوفرة
 # يدعم التسجيلات الطويلة، العربية والإنجليزية، وعرض التقدم والوقت المتبقي
+# يختار تلقائيًا بين Whisper, Vosk, أو Google SpeechRecognition
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -7,38 +8,45 @@ from pydub import AudioSegment
 import os
 import math
 import time
-import subprocess
-import whisper
 
+# التوكن
 TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
-
-# تحميل ffmpeg تلقائيًا إذا لم يكن موجودًا
-FFMPEG_DIR = "ffmpeg"
-FFMPEG_PATH = os.path.join(FFMPEG_DIR, "ffmpeg")
-
-if not os.path.exists(FFMPEG_PATH):
-    os.makedirs(FFMPEG_DIR, exist_ok=True)
-    subprocess.run(
-        "wget -O - https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | "
-        f"tar -xJ --strip-components=1 -C {FFMPEG_DIR}", shell=True, check=True
-    )
-
-# تحديد pydub لاستخدام ffmpeg المحمول
-AudioSegment.converter = FFMPEG_PATH
-
-WELCOME_TEXT = (
-    "🎙️ مرحباً بك في بوت تحويل الصوت إلى نص 🎙️\n"
-    "📩 أرسل رسالة صوتية أو ملف صوتي (حتى لو كان طويلاً)، وسأحوله إلى نص عربي أو إنجليزي"
-)
 
 MAX_MESSAGE_LENGTH = 3500
 CHUNK_LENGTH_MS = 60_000
 
-# تحميل نموذج Whisper
-model = whisper.load_model("small")  # يمكن تغييره لـ medium أو large
+# محاولة استيراد المكتبات بالترتيب
+USE_WHISPER = False
+USE_VOSK = False
+USE_SPEECHREC = False
+
+try:
+    import whisper
+    USE_WHISPER = True
+except:
+    try:
+        from vosk import Model, KaldiRecognizer
+        USE_VOSK = True
+    except:
+        try:
+            import speech_recognition as sr
+            USE_SPEECHREC = True
+        except:
+            pass
+
+# تحميل نموذج Whisper إذا كان متاحًا
+if USE_WHISPER:
+    model = whisper.load_model("small")
+
+# تحميل نموذج Vosk إذا كان متاحًا
+if USE_VOSK:
+    if not os.path.exists("vosk-model"):
+        print("⚠️ لا يوجد نموذج Vosk، يجب تحميله يدويًا")
+    else:
+        vosk_model = Model("vosk-model")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_TEXT)
+    await update.message.reply_text("🎙️ مرحبًا! أرسل رسالة صوتية لأحولها إلى نص")
 
 async def send_long_text(message, text):
     for i in range(0, len(text), MAX_MESSAGE_LENGTH):
@@ -77,14 +85,38 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chunk_path = f"chunk_{i}.wav"
         chunk.export(chunk_path, format="wav")
 
-        result = model.transcribe(chunk_path, language="auto", fp16=False)
-        text = result['text'].strip()
+        text = ""
+        # استخدام أفضل مكتبة متوفرة
+        if USE_WHISPER:
+            result = model.transcribe(chunk_path, language="auto", fp16=False)
+            text = result['text'].strip()
+        elif USE_VOSK:
+            import wave, json
+            wf = wave.open(chunk_path, "rb")
+            rec = KaldiRecognizer(vosk_model, wf.getframerate())
+            data = wf.readframes(wf.getnframes())
+            if rec.AcceptWaveform(data):
+                res = json.loads(rec.Result())
+                text = res.get('text','')
+            wf.close()
+        elif USE_SPEECHREC:
+            import speech_recognition as sr
+            r = sr.Recognizer()
+            with sr.AudioFile(chunk_path) as source:
+                audio_data = r.record(source)
+                try:
+                    text = r.recognize_google(audio_data, language="ar-AR")
+                except:
+                    try:
+                        text = r.recognize_google(audio_data, language="en-US")
+                    except:
+                        text = ""
+
         if text:
             full_text += text + "\n"
 
         os.remove(chunk_path)
 
-        # حساب التقدم والوقت المتبقي
         elapsed = time.time() - start_time
         completed = i + 1
         avg_time_per_chunk = elapsed / completed
@@ -116,5 +148,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, speech_to_text))
 
-    print("🎉 Whisper Speech to Text Bot is running with auto-downloaded ffmpeg!")
+    print("🎉 Adaptive Speech to Text Bot is running!")
     app.run_polling()
