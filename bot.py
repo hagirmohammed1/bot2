@@ -1,15 +1,30 @@
+# بوت Whisper صوت إلى نص مع تحميل ffmpeg تلقائيًا على Railway
+# يدعم التسجيلات الطويلة، العربية والإنجليزية، وعرض التقدم والوقت المتبقي
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from pydub import AudioSegment
 import os
 import math
 import time
+import subprocess
 import whisper
 
-TOKEN = os.environ.get("TOKEN")
+TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
 
-# تحديد ffmpeg المحمول
-AudioSegment.converter = "./ffmpeg/ffmpeg"
+# تحميل ffmpeg تلقائيًا إذا لم يكن موجودًا
+FFMPEG_DIR = "ffmpeg"
+FFMPEG_PATH = os.path.join(FFMPEG_DIR, "ffmpeg")
+
+if not os.path.exists(FFMPEG_PATH):
+    os.makedirs(FFMPEG_DIR, exist_ok=True)
+    subprocess.run(
+        "wget -O - https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz | "
+        f"tar -xJ --strip-components=1 -C {FFMPEG_DIR}", shell=True, check=True
+    )
+
+# تحديد pydub لاستخدام ffmpeg المحمول
+AudioSegment.converter = FFMPEG_PATH
 
 WELCOME_TEXT = (
     "🎙️ مرحباً بك في بوت تحويل الصوت إلى نص 🎙️\n"
@@ -19,7 +34,8 @@ WELCOME_TEXT = (
 MAX_MESSAGE_LENGTH = 3500
 CHUNK_LENGTH_MS = 60_000
 
-model = whisper.load_model("small")  # يمكنك تغييرها لـ medium أو large
+# تحميل نموذج Whisper
+model = whisper.load_model("small")  # يمكن تغييره لـ medium أو large
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(WELCOME_TEXT)
@@ -40,6 +56,7 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wav_path = "full_audio.wav"
     await file.download_to_drive(input_path)
 
+    # تحويل الصوت إلى WAV
     sound = AudioSegment.from_file(input_path)
     sound = sound.set_channels(1).set_frame_rate(16000)
     sound.export(wav_path, format="wav")
@@ -67,6 +84,7 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         os.remove(chunk_path)
 
+        # حساب التقدم والوقت المتبقي
         elapsed = time.time() - start_time
         completed = i + 1
         avg_time_per_chunk = elapsed / completed
@@ -98,5 +116,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, speech_to_text))
 
-    print("🎉 Whisper Speech to Text Bot is running with portable ffmpeg!")
+    print("🎉 Whisper Speech to Text Bot is running with auto-downloaded ffmpeg!")
     app.run_polling()
