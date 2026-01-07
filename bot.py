@@ -1,6 +1,5 @@
-# بوت تحويل الصوت إلى نص يعتمد على أفضل مكتبة متوفرة
+# بوت تحويل الصوت إلى نص بدون ffmpeg، يعتمد على Vosk أو SpeechRecognition
 # يدعم التسجيلات الطويلة، العربية والإنجليزية، وعرض التقدم والوقت المتبقي
-# يختار تلقائيًا بين Whisper, Vosk, أو Google SpeechRecognition
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,36 +8,22 @@ import os
 import math
 import time
 
-# التوكن
-TOKEN = os.environ.get("TOKEN")
+TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
 
 MAX_MESSAGE_LENGTH = 3500
 CHUNK_LENGTH_MS = 60_000
 
-# محاولة استيراد المكتبات بالترتيب
-USE_WHISPER = False
+# التحقق من المكتبات المتوفرة
 USE_VOSK = False
 USE_SPEECHREC = False
-
 try:
-    import whisper
-    USE_WHISPER = True
+    from vosk import Model, KaldiRecognizer
+    USE_VOSK = True
 except:
-    try:
-        from vosk import Model, KaldiRecognizer
-        USE_VOSK = True
-    except:
-        try:
-            import speech_recognition as sr
-            USE_SPEECHREC = True
-        except:
-            pass
+    import speech_recognition as sr
+    USE_SPEECHREC = True
 
-# تحميل نموذج Whisper إذا كان متاحًا
-if USE_WHISPER:
-    model = whisper.load_model("small")
-
-# تحميل نموذج Vosk إذا كان متاحًا
+# تحميل نموذج Vosk إذا كان موجودًا
 if USE_VOSK:
     if not os.path.exists("vosk-model"):
         print("⚠️ لا يوجد نموذج Vosk، يجب تحميله يدويًا")
@@ -64,7 +49,7 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     wav_path = "full_audio.wav"
     await file.download_to_drive(input_path)
 
-    # تحويل الصوت إلى WAV
+    # تحويل الصوت إلى WAV بدون ffmpeg
     sound = AudioSegment.from_file(input_path)
     sound = sound.set_channels(1).set_frame_rate(16000)
     sound.export(wav_path, format="wav")
@@ -86,11 +71,7 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chunk.export(chunk_path, format="wav")
 
         text = ""
-        # استخدام أفضل مكتبة متوفرة
-        if USE_WHISPER:
-            result = model.transcribe(chunk_path, language="auto", fp16=False)
-            text = result['text'].strip()
-        elif USE_VOSK:
+        if USE_VOSK:
             import wave, json
             wf = wave.open(chunk_path, "rb")
             rec = KaldiRecognizer(vosk_model, wf.getframerate())
@@ -100,7 +81,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text = res.get('text','')
             wf.close()
         elif USE_SPEECHREC:
-            import speech_recognition as sr
             r = sr.Recognizer()
             with sr.AudioFile(chunk_path) as source:
                 audio_data = r.record(source)
@@ -148,5 +128,5 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, speech_to_text))
 
-    print("🎉 Adaptive Speech to Text Bot is running!")
+    print("🎉 Lightweight Speech to Text Bot is running!")
     app.run_polling()
