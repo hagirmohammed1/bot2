@@ -1,3 +1,7 @@
+# بوت متقدم لاستخراج النص من الصوت (Speech to Text) مع دعم جميع التسجيلات الطويلة، عرض نسبة التقدم، الوقت المتبقي، وتثبيت ffmpeg تلقائيًا
+# يدعم اللغة العربية والإنجليزية
+# يعمل على Colab، VPS، أو Railway بدون Buildpacks
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import speech_recognition as sr
@@ -6,21 +10,25 @@ import os
 import math
 import time
 
-TOKEN = os.environ.get("TOKEN")
+# تثبيت ffmpeg تلقائيًا إذا لم يكن موجود
+if os.system("ffmpeg -version") != 0:
+    os.system("apt-get update && apt-get install -y ffmpeg")
+
+# التوكن يتم وضعه في المتغير البيئي على Railway أو Colab
+TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
 
 WELCOME_TEXT = (
     "🎙️ مرحباً بك في بوت تحويل الصوت إلى نص 🎙️\n"
     "📩 أرسل رسالة صوتية أو ملف صوتي (حتى لو كان طويلاً)، وسأحوله إلى نص عربي أو إنجليزي"
 )
 
-MAX_MESSAGE_LENGTH = 3500  # أقل من حد تيليجرام للأمان
-CHUNK_LENGTH_MS = 60_000   # تقسيم الصوت إلى مقاطع (60 ثانية)
+MAX_MESSAGE_LENGTH = 3500  # أقل من حد تيليجرام
+CHUNK_LENGTH_MS = 60_000   # تقسيم الصوت إلى مقاطع 60 ثانية
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(WELCOME_TEXT)
 
 async def send_long_text(message, text):
-    """إرسال نص طويل على عدة رسائل"""
     for i in range(0, len(text), MAX_MESSAGE_LENGTH):
         await message.reply_text(text[i:i + MAX_MESSAGE_LENGTH])
 
@@ -38,7 +46,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await file.download_to_drive(input_path)
 
-    # تحميل وتحويل الصوت
     sound = AudioSegment.from_file(input_path)
     sound = sound.set_channels(1).set_frame_rate(16000)
     sound.export(wav_path, format="wav")
@@ -46,9 +53,7 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     recognizer = sr.Recognizer()
     full_text = ""
 
-    # تقسيم الصوت الطويل
     chunks = math.ceil(len(sound) / CHUNK_LENGTH_MS)
-
     start_time = time.time()
 
     progress_message = await message.reply_text(
@@ -79,7 +84,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         os.remove(chunk_path)
 
-        # حساب التقدم والوقت المتبقي
         elapsed = time.time() - start_time
         completed = i + 1
         avg_time_per_chunk = elapsed / completed
@@ -88,7 +92,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         minutes = remaining_seconds // 60
         seconds = remaining_seconds % 60
-
         percent = int((completed / chunks) * 100)
 
         await progress_message.edit_text(
@@ -97,7 +100,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⏱️ الوقت المتبقي: {minutes} دقيقة {seconds} ثانية"
         )
 
-    # تنظيف الملفات
     if os.path.exists(input_path): os.remove(input_path)
     if os.path.exists(wav_path): os.remove(wav_path)
 
@@ -106,7 +108,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await progress_message.edit_text("✅ اكتملت المعالجة بنسبة 100%")
-
     header = "📝 النص المستخرج من التسجيل الصوتي:\n\n"
     await send_long_text(message, header + full_text.strip())
 
