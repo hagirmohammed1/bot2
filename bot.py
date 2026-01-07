@@ -6,7 +6,7 @@ import os
 import math
 import time
 
-TOKEN = "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE"
+TOKEN = os.environ.get("TOKEN")
 
 WELCOME_TEXT = (
     "🎙️ مرحباً بك في بوت تحويل الصوت إلى نص 🎙️\n"
