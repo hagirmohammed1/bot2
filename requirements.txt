@@ -1,4 +1,17 @@
-pip install python-telegram-bot==20.7
-pip install pydub
-pip install git+https://github.com/openai/whisper.git
-pip install torch --extra-index-url https://download.pytorch.org/whl/cpu  # أو GPU إذا متاح
+python-telegram-bot==20.7
+pydub==0.25.1
+
+# Whisper (اختياري إذا متوفر)
+git+https://github.com/openai/whisper.git
+
+# Vosk (اختياري إذا متوفر)
+vosk==0.3.68
+
+# SpeechRecognition (احتياطي إذا لا يوجد Whisper أو Vosk)
+SpeechRecognition==3.9.0
+
+# PyTorch (مطلوب للـ Whisper)
+torch==2.2.0 --extra-index-url https://download.pytorch.org/whl/cpu
+
+# لمطوري الصوتيات
+ffmpeg-python==0.2.3
