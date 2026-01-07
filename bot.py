@@ -1,29 +1,25 @@
-# بوت متقدم لاستخراج النص من الصوت (Speech to Text) مع دعم جميع التسجيلات الطويلة، عرض نسبة التقدم، الوقت المتبقي، وتثبيت ffmpeg تلقائيًا
-# يدعم اللغة العربية والإنجليزية
-# يعمل على Colab، VPS، أو Railway بدون Buildpacks
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import speech_recognition as sr
 from pydub import AudioSegment
 import os
 import math
 import time
+import whisper
 
-# تثبيت ffmpeg تلقائيًا إذا لم يكن موجود
-if os.system("ffmpeg -version") != 0:
-    os.system("apt-get update && apt-get install -y ffmpeg")
+TOKEN = os.environ.get("TOKEN")
 
-# التوكن يتم وضعه في المتغير البيئي على Railway أو Colab
-TOKEN = os.environ.get("TOKEN", "8584666863:AAHZ3xApgMsvioTzkd7BoIed38z5VKCSYaE")
+# تحديد ffmpeg المحمول
+AudioSegment.converter = "./ffmpeg/ffmpeg"
 
 WELCOME_TEXT = (
     "🎙️ مرحباً بك في بوت تحويل الصوت إلى نص 🎙️\n"
     "📩 أرسل رسالة صوتية أو ملف صوتي (حتى لو كان طويلاً)، وسأحوله إلى نص عربي أو إنجليزي"
 )
 
-MAX_MESSAGE_LENGTH = 3500  # أقل من حد تيليجرام
-CHUNK_LENGTH_MS = 60_000   # تقسيم الصوت إلى مقاطع 60 ثانية
+MAX_MESSAGE_LENGTH = 3500
+CHUNK_LENGTH_MS = 60_000
+
+model = whisper.load_model("small")  # يمكنك تغييرها لـ medium أو large
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(WELCOME_TEXT)
@@ -40,19 +36,15 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     file = await (message.voice.get_file() if message.voice else message.audio.get_file())
-
     input_path = "input_audio"
     wav_path = "full_audio.wav"
-
     await file.download_to_drive(input_path)
 
     sound = AudioSegment.from_file(input_path)
     sound = sound.set_channels(1).set_frame_rate(16000)
     sound.export(wav_path, format="wav")
 
-    recognizer = sr.Recognizer()
     full_text = ""
-
     chunks = math.ceil(len(sound) / CHUNK_LENGTH_MS)
     start_time = time.time()
 
@@ -61,24 +53,15 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     for i in range(chunks):
-        chunk_start = i * CHUNK_LENGTH_MS
-        chunk_end = min((i + 1) * CHUNK_LENGTH_MS, len(sound))
-        chunk = sound[chunk_start:chunk_end]
+        start_ms = i * CHUNK_LENGTH_MS
+        end_ms = min((i + 1) * CHUNK_LENGTH_MS, len(sound))
+        chunk = sound[start_ms:end_ms]
 
         chunk_path = f"chunk_{i}.wav"
         chunk.export(chunk_path, format="wav")
 
-        with sr.AudioFile(chunk_path) as source:
-            audio_data = recognizer.record(source)
-
-        try:
-            text = recognizer.recognize_google(audio_data, language="ar-AR")
-        except:
-            try:
-                text = recognizer.recognize_google(audio_data, language="en-US")
-            except:
-                text = ""
-
+        result = model.transcribe(chunk_path, language="auto", fp16=False)
+        text = result['text'].strip()
         if text:
             full_text += text + "\n"
 
@@ -89,7 +72,6 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         avg_time_per_chunk = elapsed / completed
         remaining_chunks = chunks - completed
         remaining_seconds = int(avg_time_per_chunk * remaining_chunks)
-
         minutes = remaining_seconds // 60
         seconds = remaining_seconds % 60
         percent = int((completed / chunks) * 100)
@@ -111,11 +93,10 @@ async def speech_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     header = "📝 النص المستخرج من التسجيل الصوتي:\n\n"
     await send_long_text(message, header + full_text.strip())
 
-
 if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, speech_to_text))
 
-    print("🎉 Speech to Text Bot is running with progress & ETA...")
+    print("🎉 Whisper Speech to Text Bot is running with portable ffmpeg!")
     app.run_polling()
