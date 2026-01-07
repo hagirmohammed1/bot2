@@ -1,14 +1,3 @@
-# بوت متقدم لاستخراج النص من الصوت (Speech to Text)
-# يدعم اللغة العربية والإنجليزية
-# يقبل التسجيلات الطويلة ويقسمها تلقائيًا
-# يعرض نسبة تقدم مئوية + الوقت المتبقي التقريبي
-# إذا تجاوز النص حد رسالة تيليجرام، يرسله على عدة رسائل متتالية
-# يعمل مع الرسائل الصوتية (Voice) وملفات الصوت (Audio)
-# مناسب للتشغيل على Google Colab أو Linux
-# المتطلبات:
-# pip install python-telegram-bot==20.7 SpeechRecognition pydub
-# apt install ffmpeg
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import speech_recognition as sr
