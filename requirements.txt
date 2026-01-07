@@ -13,5 +13,3 @@ SpeechRecognition==3.9.0
 # PyTorch (مطلوب للـ Whisper)
 torch==2.2.0 --extra-index-url https://download.pytorch.org/whl/cpu
 
-# لمطوري الصوتيات
-ffmpeg-python==0.2.3
